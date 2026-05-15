@@ -1,0 +1,562 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Live Delivery Tracker — TX to NY</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      background: #f3f4f6;
+      color: #111827;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    header {
+      background: #0f172a;
+      color: white;
+      padding: 1rem 1.5rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      flex-wrap: wrap;
+    }
+    header h1 { font-size: 1.1rem; font-weight: 600; }
+    .controls { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+    input {
+      padding: 0.5rem 0.75rem;
+      border-radius: 0.375rem;
+      border: none;
+      outline: none;
+      font-size: 0.95rem;
+      min-width: 220px;
+    }
+    button {
+      padding: 0.5rem 1rem;
+      border-radius: 0.375rem;
+      border: none;
+      font-size: 0.95rem;
+      cursor: pointer;
+      font-weight: 500;
+      transition: opacity 0.2s;
+    }
+    button:hover { opacity: 0.9; }
+    .btn-primary { background: #3b82f6; color: white; }
+    .btn-success { background: #10b981; color: white; }
+    .btn-secondary { background: #64748b; color: white; }
+
+    main {
+      flex: 1;
+      display: flex;
+      overflow: hidden;
+    }
+    #sidebar {
+      width: 420px;
+      max-width: 100%;
+      background: white;
+      border-right: 1px solid #e5e7eb;
+      display: flex;
+      flex-direction: column;
+      overflow-y: auto;
+    }
+    .panel { padding: 1.25rem; border-bottom: 1px solid #e5e7eb; }
+    .panel h2 { font-size: 0.875rem; text-transform: uppercase; letter-spacing: 0.05em; color: #6b7280; margin-bottom: 0.75rem; }
+    .tracking-id {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: #0f172a;
+      word-break: break-all;
+    }
+    .status-badge {
+      display: inline-block;
+      margin-top: 0.5rem;
+      padding: 0.25rem 0.75rem;
+      border-radius: 9999px;
+      font-size: 0.8rem;
+      font-weight: 600;
+    }
+    .status-picked-up { background: #dbeafe; color: #1e40af; }
+    .status-in-transit { background: #fef3c7; color: #92400e; }
+    .status-out-for-delivery { background: #fde68a; color: #78350f; }
+    .status-delivered { background: #d1fae5; color: #065f46; }
+    .status-departed { background: #eff6ff; color: #1e40af; }
+    .status-arrived { background: #e0f2fe; color: #0c4a6e; }
+
+    .address-box {
+      background: #f9fafb;
+      border-radius: 0.5rem;
+      padding: 0.75rem 1rem;
+      margin-top: 0.5rem;
+      border: 1px solid #e5e7eb;
+    }
+    .address-box .label { font-size: 0.7rem; text-transform: uppercase; color: #6b7280; font-weight: 600; letter-spacing: 0.05em; }
+    .address-box .addr { font-size: 0.9rem; font-weight: 500; margin-top: 0.15rem; }
+
+    .info-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.75rem;
+      margin-top: 0.75rem;
+    }
+    .info-box { background: #f9fafb; padding: 0.75rem; border-radius: 0.5rem; }
+    .info-box label { display: block; font-size: 0.75rem; color: #6b7280; margin-bottom: 0.25rem; }
+    .info-box value { display: block; font-size: 0.95rem; font-weight: 600; }
+
+    #map {
+      flex: 1;
+      min-height: 300px;
+      background: #e5e7eb;
+    }
+
+    .timeline { list-style: none; position: relative; padding-left: 1.5rem; }
+    .timeline::before {
+      content: '';
+      position: absolute;
+      left: 0.4rem;
+      top: 0.4rem;
+      bottom: 0.4rem;
+      width: 2px;
+      background: #e5e7eb;
+    }
+    .timeline li { position: relative; margin-bottom: 1.25rem; }
+    .timeline li::before {
+      content: '';
+      position: absolute;
+      left: -1.25rem;
+      top: 0.35rem;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: #cbd5e1;
+      border: 2px solid white;
+      box-shadow: 0 0 0 2px #cbd5e1;
+    }
+    .timeline li.active::before { background: #3b82f6; box-shadow: 0 0 0 2px #3b82f6; }
+    .timeline li.delivered::before { background: #10b981; box-shadow: 0 0 0 2px #10b981; }
+    .timeline li.arrived::before { background: #0ea5e9; box-shadow: 0 0 0 2px #0ea5e9; }
+    .timeline .time { font-size: 0.75rem; color: #6b7280; display: block; margin-bottom: 0.15rem; }
+    .timeline .event { font-size: 0.9rem; font-weight: 500; }
+    .timeline .location { font-size: 0.8rem; color: #6b7280; }
+
+    .empty-state { padding: 2rem; text-align: center; color: #9ca3af; }
+    .shipment-card {
+      background: #f9fafb;
+      border: 1px solid #e5e7eb;
+      border-radius: 0.5rem;
+      padding: 0.75rem 1rem;
+      margin-bottom: 0.5rem;
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+    }
+    .shipment-card:hover { border-color: #3b82f6; background: #eff6ff; }
+    .shipment-card .id { font-weight: 700; font-family: monospace; }
+    .shipment-card .mini-status { font-size: 0.8rem; color: #6b7280; margin-top: 0.25rem; }
+
+    @media (max-width: 768px) {
+      main { flex-direction: column; }
+      #sidebar { width: 100%; height: 55vh; border-right: none; border-bottom: 1px solid #e5e7eb; }
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <h1>📦 Live Delivery Tracker — Cross-Country</h1>
+    <div class="controls">
+      <input type="text" id="trackInput" placeholder="Enter tracking number" />
+      <button class="btn-primary" onclick="trackPackage()">Track</button>
+      <button class="btn-success" onclick="createShipment()">+ New Shipment</button>
+    </div>
+  </header>
+
+  <main>
+    <aside id="sidebar">
+      <div class="panel" id="detailPanel">
+        <div class="empty-state">Create a shipment to start tracking from Shiner, TX to Syracuse, NY.</div>
+      </div>
+    </aside>
+    <div id="map"></div>
+  </main>
+
+  <script>
+    // --- Map Setup ---
+    const map = L.map('map').setView([36.5, -91.0], 5);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; OpenStreetMap contributors'
+    }).addTo(map);
+
+    // --- Fixed Addresses (Approximate Coordinates) ---
+    const ORIGIN = {
+      name: "50 County Road 356 (CR 356), Shiner, TX 77984",
+      coords: [29.4291, -97.1705]  // Approx. Shiner, TX
+    };
+    const DESTINATION = {
+      name: "947 Pond St #201, Syracuse, NY 13208",
+      coords: [43.0640, -76.1540] // Approx. Northside Syracuse
+    };
+
+    // Simulated long-haul waypoints (TX -> AR -> TN -> KY -> OH -> PA -> NY)
+    // These approximate a plausible FedEx/UPS ground corridor
+    const LONG_HAUL_ROUTE = [
+      [29.4291, -97.1705],   // Shiner, TX
+      [29.6500, -97.0000],   // Near Luling
+      [30.2700, -97.7400],   // Austin area
+      [31.1000, -97.3300],   // Temple/Waco
+      [32.7800, -96.8000],   // Dallas
+      [33.9000, -94.8000],   // Texarkana
+      [35.1500, -93.1600],   // Ozark, AR
+      [36.0600, -90.5000],   // Blytheville, AR
+      [35.1200, -89.9700],   // Memphis, TN
+      [36.1600, -86.7800],   // Nashville, TN
+      [37.0000, -85.9300],   // Bowling Green, KY
+      [38.0400, -84.5000],   // Lexington, KY
+      [39.1000, -84.5100],   // Cincinnati, OH
+      [40.4400, -80.0000],   // Pittsburgh, PA
+      [41.0800, -80.3400],   // Youngstown, PA/OH
+      [42.1000, -79.2400],   // Jamestown, NY area
+      [42.8900, -78.8800],   // Buffalo / Rochester corridor
+      [43.0640, -76.1540]    // Syracuse, NY
+    ];
+
+    const HUB_NAMES = [
+      "Origin Facility (Shiner, TX)",
+      "Luling Substation",
+      "Austin Hub",
+      "Temple Distribution Center",
+      "Dallas/Fort Worth Hub",
+      "Texarkana Gateway",
+      "Little Rock Regional Hub",
+      "Jonesboro Sort Facility",
+      "Memphis SuperHub",
+      "Nashville Distribution",
+      "Bowling Green Hub",
+      "Lexington Sort Facility",
+      "Cincinnati Hub",
+      "Pittsburgh Gateway",
+      "Youngstown Distribution",
+      "Southern Tier NY Hub",
+      "Rochester Sort Facility",
+      "Destination Facility (Syracuse, NY)"
+    ];
+
+    // --- Data & State ---
+    const shipments = {};
+    const statusStages = ['Picked Up', 'In Transit', 'Out for Delivery', 'Delivered'];
+    const statusClass = {
+      'Picked Up': 'status-picked-up',
+      'In Transit': 'status-in-transit',
+      'Out for Delivery': 'status-out-for-delivery',
+      'Delivered': 'status-delivered',
+      'Departed Hub': 'status-departed',
+      'Arrived at Hub': 'status-arrived'
+    };
+
+    let activeMarkers = {};
+
+    // --- Helpers ---
+    function generateId() {
+      const rand = Math.random().toString(36).substring(2, 8).toUpperCase();
+      return 'TX-NY-' + rand;
+    }
+
+    function timeString() {
+      const now = new Date();
+      return now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    }
+
+    // --- Core Logic ---
+    function createShipment() {
+      const id = generateId();
+      // Copy route and add tiny jitter so multiple packages don't perfectly overlap
+      const route = LONG_HAUL_ROUTE.map(([lat, lng]) => [
+        lat + (Math.random() - 0.5) * 0.02,
+        lng + (Math.random() - 0.5) * 0.02
+      ]);
+
+      const shipment = {
+        id,
+        route,
+        index: 0,
+        progress: 0,
+        status: 'Picked Up',
+        delivered: false,
+        history: [{
+          time: timeString(),
+          event: 'Picked Up',
+          location: ORIGIN.name,
+          active: true,
+          delivered: false,
+          isHub: false
+        }],
+        marker: null,
+        polyline: null,
+        lastHubIndex: 0
+      };
+
+      shipments[id] = shipment;
+      initMarker(shipment);
+      startSimulation(shipment);
+      selectShipment(id);
+    }
+
+    function initMarker(shipment) {
+      const icon = L.divIcon({
+        className: 'custom-marker',
+        html: `<div style="width:16px;height:16px;background:#3b82f6;border:2px solid white;border-radius:50%;box-shadow:0 2px 6px rgba(0,0,0,0.35);"></div>`,
+        iconSize: [16, 16],
+        iconAnchor: [8, 8]
+      });
+
+      shipment.marker = L.marker(shipment.route[0], { icon }).addTo(map);
+      shipment.polyline = L.polyline(shipment.route, {
+        color: '#3b82f6',
+        weight: 4,
+        opacity: 0.6,
+        dashArray: '6, 8'
+      }).addTo(map);
+
+      // Add origin and destination pins
+      const originIcon = L.divIcon({
+        html: `<div style="width:14px;height:14px;background:#10b981;border:2px solid white;border-radius:50%;box-shadow:0 2px 4px rgba(0,0,0,0.3);"></div>`,
+        iconSize: [14, 14], iconAnchor: [7, 7]
+      });
+      const destIcon = L.divIcon({
+        html: `<div style="width:14px;height:14px;background:#ef4444;border:2px solid white;border-radius:50%;box-shadow:0 2px 4px rgba(0,0,0,0.3);"></div>`,
+        iconSize: [14, 14], iconAnchor: [7, 7]
+      });
+
+      L.marker(ORIGIN.coords, { icon: originIcon, zIndexOffset: -100 }).addTo(map).bindPopup("Origin:<br>" + ORIGIN.name);
+      L.marker(DESTINATION.coords, { icon: destIcon, zIndexOffset: -100 }).addTo(map).bindPopup("Destination:<br>" + DESTINATION.name);
+
+      map.fitBounds(shipment.polyline.getBounds(), { padding: [60, 60] });
+    }
+
+    function startSimulation(shipment) {
+      const speedMs = 1000; // 1 second per tick
+      const stepSize = 0.035; // slower for long route
+
+      const interval = setInterval(() => {
+        if (shipment.delivered) {
+          clearInterval(interval);
+          return;
+        }
+
+        shipment.progress += stepSize;
+
+        if (shipment.progress >= 1) {
+          shipment.progress = 0;
+          shipment.index++;
+        }
+
+        if (shipment.index >= shipment.route.length - 1) {
+          shipment.index = shipment.route.length - 2;
+          shipment.progress = 1;
+          setDelivered(shipment);
+          clearInterval(interval);
+          return;
+        }
+
+        const a = shipment.route[shipment.index];
+        const b = shipment.route[shipment.index + 1];
+
+        const lat = a[0] + (b[0] - a[0]) * shipment.progress;
+        const lng = a[1] + (b[1] - a[1]) * shipment.progress;
+
+        shipment.marker.setLatLng([lat, lng]);
+
+        // Auto-pan map if tracking this one
+        if (shipment.id === document.getElementById('trackInput').value.trim().toUpperCase()) {
+          map.panTo([lat, lng], { animate: true, duration: 0.6 });
+        }
+
+        // Hub arrival/departure events
+        const totalSteps = shipment.route.length - 1;
+        const currentStep = shipment.index + shipment.progress;
+
+        // When we land close to a waypoint, log hub events
+        if (shipment.progress < 0.05 && shipment.index > shipment.lastHubIndex) {
+          const hubName = HUB_NAMES[shipment.index] || `Hub #${shipment.index}`;
+          addHistory(shipment, 'Arrived at Hub', hubName, true);
+          shipment.lastHubIndex = shipment.index;
+          if (document.getElementById('trackInput').value.trim().toUpperCase() === shipment.id) {
+            renderDetails(shipment);
+          }
+          setTimeout(() => {
+            if (!shipment.delivered) {
+              addHistory(shipment, 'Departed Hub', hubName, false);
+              if (document.getElementById('trackInput').value.trim().toUpperCase() === shipment.id) {
+                renderDetails(shipment);
+              }
+            }
+          }, 2200);
+        }
+
+        // Overall status based on route percent
+        const pct = currentStep / totalSteps;
+        let newStatus = shipment.status;
+        if (pct < 0.10) newStatus = 'Picked Up';
+        else if (pct < 0.90) newStatus = 'In Transit';
+        else if (!shipment.delivered) newStatus = 'Out for Delivery';
+
+        if (newStatus !== shipment.status && !shipment.delivered) {
+          shipment.status = newStatus;
+          if (document.getElementById('trackInput').value.trim().toUpperCase() === shipment.id) {
+            renderDetails(shipment);
+          }
+        }
+
+      }, speedMs);
+    }
+
+    function setDelivered(shipment) {
+      shipment.status = 'Delivered';
+      shipment.delivered = true;
+
+      const icon = L.divIcon({
+        className: 'custom-marker',
+        html: `<div style="width:18px;height:18px;background:#10b981;border:3px solid white;border-radius:50%;box-shadow:0 2px 8px rgba(0,0,0,0.4);"></div>`,
+        iconSize: [18, 18],
+        iconAnchor: [9, 9]
+      });
+      shipment.marker.setIcon(icon);
+      shipment.marker.setZIndexOffset(500);
+
+      addHistory(shipment, 'Delivered', DESTINATION.name, false, true);
+      if (document.getElementById('trackInput').value.trim().toUpperCase() === shipment.id) {
+        renderDetails(shipment);
+      }
+    }
+
+    function addHistory(shipment, event, location, isHub = false, isDelivered = false) {
+      // Mark previous as inactive
+      shipment.history.forEach(h => { h.active = false; });
+      shipment.history.unshift({
+        time: timeString(),
+        event,
+        location,
+        active: !isDelivered,
+        delivered: isDelivered,
+        isHub
+      });
+    }
+
+    // --- UI ---
+    function selectShipment(id) {
+      const input = document.getElementById('trackInput');
+      input.value = id;
+      trackPackage();
+    }
+
+    function trackPackage() {
+      const id = document.getElementById('trackInput').value.trim().toUpperCase();
+      const shipment = shipments[id];
+
+      if (!shipment) {
+        renderNotFound(id);
+        return;
+      }
+
+      renderDetails(shipment);
+      map.fitBounds(shipment.polyline.getBounds(), { padding: [60, 60] });
+      setTimeout(() => map.panTo(shipment.marker.getLatLng()), 500);
+    }
+
+    function renderDetails(shipment) {
+      const panel = document.getElementById('detailPanel');
+
+      const latest = shipment.history[0];
+      const remainingSteps = (shipment.route.length - 1) - (shipment.index + shipment.progress);
+      const etaMins = Math.max(1, Math.ceil(remainingSteps * 0.4));
+      const eta = shipment.delivered ? 'Delivered' : `~${etaMins} min${etaMins > 1 ? 's' : ''}`;
+
+      const timelineHtml = shipment.history.map(h => `
+        <li class="${h.delivered ? 'delivered' : (h.isHub ? 'arrived' : (h.active ? 'active' : ''))}">
+          <span class="time">${h.time}</span>
+          <div class="event">${h.event}</div>
+          <div class="location">${h.location}</div>
+        </li>
+      `).join('');
+
+      const otherShipments = Object.values(shipments)
+        .filter(s => s.id !== shipment.id)
+        .map(s => `
+          <div class="shipment-card" onclick="selectShipment('${s.id}')">
+            <div class="id">${s.id}</div>
+            <div class="mini-status">${s.status} • ${s.delivered ? 'Done' : 'Active'}</div>
+          </div>
+        `).join('') || '<div style="color:#9ca3af;font-size:0.85rem;">No other active shipments.</div>';
+
+      panel.innerHTML = `
+        <div style="display:flex;justify-content:space-between;align-items:start;flex-wrap:wrap;gap:0.5rem;">
+          <div>
+            <h2>Tracking Number</h2>
+            <div class="tracking-id">${shipment.id}</div>
+            <span class="status-badge ${statusClass[shipment.status] || 'status-picked-up'}">${shipment.status}</span>
+          </div>
+          <button class="btn-secondary" onclick="createShipment()" style="margin-top:0.25rem;">+ New</button>
+        </div>
+
+        <div class="address-box">
+          <div class="label">From (Origin)</div>
+          <div class="addr">${ORIGIN.name}</div>
+        </div>
+        <div class="address-box">
+          <div class="label">To (Destination)</div>
+          <div class="addr">${DESTINATION.name}</div>
+        </div>
+
+        <div class="info-grid">
+          <div class="info-box">
+            <label>Estimated Arrival</label>
+            <value>${eta}</value>
+          </div>
+          <div class="info-box">
+            <label>Last Updated</label>
+            <value>${latest ? latest.time : '--:--:--'}</value>
+          </div>
+          <div class="info-box">
+            <label>Current Hub</label>
+            <value>${HUB_NAMES[shipment.index] || 'En Route'}</value>
+          </div>
+          <div class="info-box">
+            <label>Progress</label>
+            <value>${Math.min(100, Math.floor(((shipment.index + shipment.progress) / (shipment.route.length - 1)) * 100))}%</value>
+          </div>
+        </div>
+
+        <div class="panel" style="padding:1.25rem 0;">
+          <h2>Shipment History</h2>
+          <ul class="timeline">${timelineHtml}</ul>
+        </div>
+
+        <div class="panel" style="padding:1.25rem 0;border-bottom:none;">
+          <h2>Other Shipments</h2>
+          ${otherShipments}
+        </div>
+      `;
+    }
+
+    function renderNotFound(id) {
+      document.getElementById('detailPanel').innerHTML = `
+        <div class="empty-state">
+          <div style="font-size:2rem;margin-bottom:0.5rem;">🔍</div>
+          <strong>Shipment not found</strong>
+          <p style="margin-top:0.5rem;">No package found with ID <code>${id}</code>.</p>
+          <button class="btn-primary" onclick="createShipment()" style="margin-top:1rem;">Create New Shipment</button>
+        </div>
+      `;
+    }
+
+    // --- Boot with demo ---
+    window.addEventListener('load', () => {
+      createShipment();
+    });
+  </script>
+</body>
+</html>
